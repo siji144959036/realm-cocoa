@@ -19,6 +19,7 @@
 #import "RLMAccessor.hpp"
 
 #import "RLMArray_Private.hpp"
+#import "RLMInteger_Private.h"
 #import "RLMListBase.h"
 #import "RLMObjectSchema_Private.hpp"
 #import "RLMObjectStore.h"
@@ -254,6 +255,12 @@ id managedGetter(RLMProperty *prop, const char *type) {
     bool boxed = *type == '@';
     switch (prop.type) {
         case RLMPropertyTypeInt:
+            if (prop.subtype == RLMPropertySubtypeInteger) {
+                return ^RLMInteger *(__unsafe_unretained RLMObjectBase *const obj) {
+                    RLMVerifyAttached(obj);
+                    return [[RLMInteger alloc] initWithObject:obj property:prop];
+                };
+            }
             if (prop.optional || boxed) {
                 return makeNumberGetter<long long>(index, boxed, prop.optional);
             }
@@ -320,11 +327,41 @@ id makeSetter(__unsafe_unretained RLMProperty *const prop) {
     };
 }
 
+static inline NSNumber<RLMInt> *RLMCoerceToNSNumber(__unsafe_unretained id obj) {
+    REALM_ASSERT_DEBUG(obj == nil || RLMDynamicCast<NSNumber>(obj));
+    return obj;
+}
+
+id makeRealmIntegerSetter(__unsafe_unretained RLMProperty *const prop) {
+    // FIXME: move this into the `makeSetter` method once we support `if constexpr`
+    NSUInteger index = prop.index;
+    NSString *name = prop.name;
+    REALM_ASSERT(!prop.isPrimary);
+    return ^(__unsafe_unretained RLMObjectBase *const obj, id val) {
+        auto set = [&] {
+            setValue(obj, obj->_info->objectSchema->persisted_properties[index].table_column,
+                     RLMCoerceToNSNumber(val));
+        };
+        if (RLMObservationInfo *info = RLMGetObservationInfo(obj->_observationInfo,
+                                                             obj->_row.get_index(), *obj->_info)) {
+            info->willChange(name);
+            set();
+            info->didChange(name);
+        }
+        else {
+            set();
+        }
+    };
+}
+
 // dynamic setter with column closure
 id managedSetter(RLMProperty *prop, const char *type) {
     bool boxed = prop.optional || *type == '@';
     switch (prop.type) {
         case RLMPropertyTypeInt:
+            if (prop.subtype == RLMPropertySubtypeInteger) {
+                return makeRealmIntegerSetter(prop);
+            }
             if (boxed) {
                 return makeSetter<NSNumber<RLMInt> *>(prop);
             }
@@ -373,11 +410,10 @@ void superSet(RLMObjectBase *obj, NSString *propName, id val) {
 
 // getter/setter for unmanaged object
 id unmanagedGetter(RLMProperty *prop, const char *) {
-    // only override getters for RLMArray and linking objects properties
+    // only override getters for RLMArray, RLM(Nullable)Integer and linking objects properties
+    NSString *propName = prop.name;
     if (prop.type == RLMPropertyTypeArray) {
         NSString *objectClassName = prop.objectClassName;
-        NSString *propName = prop.name;
-
         return ^(RLMObjectBase *obj) {
             id val = superGet(obj, propName);
             if (!val) {
@@ -389,6 +425,16 @@ id unmanagedGetter(RLMProperty *prop, const char *) {
     }
     if (prop.type == RLMPropertyTypeLinkingObjects) {
         return ^(RLMObjectBase *) { return [RLMResults emptyDetachedResults]; };
+    }
+    else if (prop.subtype == RLMPropertySubtypeInteger) {
+        return ^(RLMObjectBase *obj){
+            id val = superGet(obj, propName);
+            if (!val) {
+                val = [[RLMInteger alloc] initWithValue:(prop.optional ? nil : @0)];
+                superSet(obj, propName, val);
+            }
+            return val;
+        };
     }
     return nil;
 }
@@ -510,6 +556,27 @@ void RLMReplaceSharedSchemaMethod(Class accessorClass, RLMObjectSchema *schema) 
         return [RLMSchema sharedSchemaForClass:cls];
     });
     class_addMethod(metaClass, @selector(sharedSchema), imp, "@@:");
+}
+
+void RLMDynamicIntegerAdd(RLMObjectBase *obj, NSString *propName, NSInteger delta) {
+    RLMObjectSchema *schema = obj->_objectSchema;
+    RLMProperty *prop = schema[propName];
+    if (!prop) {
+        @throw RLMException(@"Invalid property name '%@' for class '%@'.", propName, obj->_objectSchema.className);
+    }
+    if (prop.isPrimary) {
+        @throw RLMException(@"Primary key can't be incremented.");
+    }
+    if (prop.type != RLMPropertyTypeInt) {
+        @throw RLMException(@"Cannot increment a non-integer property.");
+    }
+    RLMVerifyInWriteTransaction(obj);
+    auto col = obj->_info->tableColumn(prop);
+    auto table = obj->_row.get_table();
+    if (table->is_null(col, obj->_row.get_index())) {
+        @throw RLMException(@"Cannot increment an integer property whose value is nil. Set its value first.");
+    }
+    table->add_int(col, obj->_row.get_index(), delta);
 }
 
 void RLMDynamicValidatedSet(RLMObjectBase *obj, NSString *propName, id val) {
@@ -645,7 +712,10 @@ id RLMAccessorContext::propertyValue(__unsafe_unretained id const obj, size_t pr
 
     // Property value from an instance of this object type
     id value;
-    if ([obj isKindOfClass:_info.rlmObjectSchema.objectClass] && prop.swiftIvar) {
+    if (prop.subtype != RLMPropertySubtypeInteger
+        && [obj isKindOfClass:_info.rlmObjectSchema.objectClass]
+        && prop.swiftIvar) {
+#warning TODO: how does Swift interact with RLMInteger? If we don't use a different type we shouldn't need to do anything.
         if (prop.type == RLMPropertyTypeArray) {
             return static_cast<RLMListBase *>(object_getIvar(obj, prop.swiftIvar))._rlmArray;
         }
@@ -654,7 +724,7 @@ id RLMAccessorContext::propertyValue(__unsafe_unretained id const obj, size_t pr
         }
     }
     else {
-    // Property value from some object that's KVC-compatible
+        // Property value from some object that's KVC-compatible
         value = RLMValidatedValueForProperty(obj, [obj respondsToSelector:prop.getterSel] ? prop.getterName : prop.name,
                                              _info.rlmObjectSchema.className);
     }
@@ -730,7 +800,7 @@ float RLMAccessorContext::unbox(__unsafe_unretained id const v, bool, bool) {
 }
 template<>
 long long RLMAccessorContext::unbox(__unsafe_unretained id const v, bool, bool) {
-    checkType([v isKindOfClass:[NSNumber class]], v, @"int");
+    checkType([v isKindOfClass:[NSNumber class]] || [v isKindOfClass:[RLMInteger class]], v, @"int");
     return [v longLongValue];
 }
 template<>
@@ -820,6 +890,13 @@ realm::RowExpr RLMAccessorContext::unbox(__unsafe_unretained id const v, bool cr
     return link->_row;
 }
 
+bool RLMAccessorContext::is_null(id v) {
+    if ([v isKindOfClass:[RLMInteger class]]) {
+        return ![v value];
+    }
+    return v == NSNull.null;
+}
+
 void RLMAccessorContext::will_change(realm::Row const& row, realm::Property const& prop) {
     _observationInfo = RLMGetObservationInfo(nullptr, row.get_index(), _info);
     if (_observationInfo) {
@@ -845,12 +922,14 @@ RLMOptionalId RLMAccessorContext::value_for_property(__unsafe_unretained id cons
     }
 
     if (_promote_existing && [obj isKindOfClass:_info.rlmObjectSchema.objectClass] && !prop.swiftIvar) {
-        // set the ivars for object and array properties to nil as otherwise the
+        // set the ivars for object, array, and Realm integer properties to nil as otherwise the
         // accessors retain objects that are no longer accessible via the properties
         // this is mainly an issue when the object graph being added has cycles,
         // as it's not obvious that the user has to set the *ivars* to nil to
         // avoid leaking memory
-        if (prop.type == RLMPropertyTypeObject || prop.type == RLMPropertyTypeArray) {
+        if (prop.type == RLMPropertyTypeObject
+            || prop.type == RLMPropertyTypeArray
+            || prop.subtype == RLMPropertySubtypeInteger) {
             ((void(*)(id, SEL, id))objc_msgSend)(obj, prop.setterSel, nil);
         }
     }

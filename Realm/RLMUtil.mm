@@ -19,6 +19,7 @@
 #import "RLMUtil.hpp"
 
 #import "RLMArray_Private.hpp"
+#import "RLMInteger.h"
 #import "RLMListBase.h"
 #import "RLMObjectSchema_Private.hpp"
 #import "RLMObjectStore.h"
@@ -118,6 +119,14 @@ BOOL RLMIsObjectValidForProperty(__unsafe_unretained id const obj,
         case RLMPropertyTypeDate:
             return [obj isKindOfClass:[NSDate class]];
         case RLMPropertyTypeInt:
+            if (property.subtype == RLMPropertySubtypeInteger) {
+                if ([obj isKindOfClass:[RLMInteger class]]) {
+                    return YES;
+                } else if (NSNumber *number = RLMDynamicCast<NSNumber>(obj)) {
+                    return nsnumber_is_like_integer(number);
+                }
+                return NO;
+            }
             if (NSNumber *number = RLMDynamicCast<NSNumber>(obj)) {
                 return nsnumber_is_like_integer(number);
             }
