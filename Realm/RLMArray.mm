@@ -217,14 +217,16 @@ static void changeArray(__unsafe_unretained RLMArray *const ar, NSKeyValueChange
     changeArray(ar, kind, f, [=] { return is; });
 }
 
-static void validateMatchingObjectType(RLMArray *array, id value) {
+void RLMArrayValidateMatchingObjectType(__unsafe_unretained RLMArray *const array,
+                                        __unsafe_unretained id const value) {
     if (!value && !array->_optional) {
-        @throw RLMException(@"Object must not be nil");
+        @throw RLMException(@"Object must not be nil.");
     }
     if (array->_type != RLMPropertyTypeObject) {
         if (!RLMValidateValue(value, array->_type, array->_optional, false, nil)) {
-            @throw RLMException(@"Invalid value '%@' of type '%@' for array of '%@'",
-                                value, [value class], RLMTypeToString(array->_type));
+            @throw RLMException(@"Invalid value '%@' of type '%@' for expected type '%@%s'.",
+                                value, [value class], RLMTypeToString(array->_type),
+                                array->_optional ? "?" : "");
         }
         return;
     }
@@ -251,7 +253,7 @@ static void validateArrayBounds(__unsafe_unretained RLMArray *const ar,
 
 - (void)addObjectsFromArray:(NSArray *)array {
     for (id obj in array) {
-        validateMatchingObjectType(self, obj);
+        RLMArrayValidateMatchingObjectType(self, obj);
     }
     changeArray(self, NSKeyValueChangeInsertion, NSMakeRange(_backingArray.count, array.count), ^{
         [_backingArray addObjectsFromArray:array];
@@ -259,7 +261,7 @@ static void validateArrayBounds(__unsafe_unretained RLMArray *const ar,
 }
 
 - (void)insertObject:(id)anObject atIndex:(NSUInteger)index {
-    validateMatchingObjectType(self, anObject);
+    RLMArrayValidateMatchingObjectType(self, anObject);
     validateArrayBounds(self, index, true);
     changeArray(self, NSKeyValueChangeInsertion, index, ^{
         [_backingArray insertObject:anObject atIndex:index];
@@ -270,7 +272,7 @@ static void validateArrayBounds(__unsafe_unretained RLMArray *const ar,
     changeArray(self, NSKeyValueChangeInsertion, indexes, ^{
         NSUInteger currentIndex = [indexes firstIndex];
         for (RLMObject *obj in objects) {
-            validateMatchingObjectType(self, obj);
+            RLMArrayValidateMatchingObjectType(self, obj);
             [_backingArray insertObject:obj atIndex:currentIndex];
             currentIndex = [indexes indexGreaterThanIndex:currentIndex];
         }
@@ -291,7 +293,7 @@ static void validateArrayBounds(__unsafe_unretained RLMArray *const ar,
 }
 
 - (void)replaceObjectAtIndex:(NSUInteger)index withObject:(id)anObject {
-    validateMatchingObjectType(self, anObject);
+    RLMArrayValidateMatchingObjectType(self, anObject);
     validateArrayBounds(self, index);
     changeArray(self, NSKeyValueChangeReplacement, index, ^{
         [_backingArray replaceObjectAtIndex:index withObject:anObject];
@@ -325,7 +327,7 @@ static void validateArrayBounds(__unsafe_unretained RLMArray *const ar,
 }
 
 - (NSUInteger)indexOfObject:(id)object {
-    validateMatchingObjectType(self, object);
+    RLMArrayValidateMatchingObjectType(self, object);
     if (!_backingArray) {
         return NSNotFound;
     }
@@ -391,12 +393,41 @@ static void validateArrayBounds(__unsafe_unretained RLMArray *const ar,
 }
 
 - (void)setValue:(id)value forKey:(NSString *)key {
+    if ([key isEqualToString:@"self"]) {
+        RLMArrayValidateMatchingObjectType(self, value);
+        for (NSUInteger i = 0, count = _backingArray.count; i < count; ++i) {
+            _backingArray[i] = value;
+        }
+        return;
+    }
     [_backingArray setValue:value forKey:key];
+}
+
+static bool canAggregate(RLMPropertyType type, bool allowDate) {
+    switch (type) {
+        case RLMPropertyTypeInt:
+        case RLMPropertyTypeFloat:
+        case RLMPropertyTypeDouble:
+            return true;
+        case RLMPropertyTypeDate:
+            return allowDate;
+        default:
+            return false;
+    }
 }
 
 - (void)validateAggregateProperty:(NSString *)propertyName
                            method:(SEL)aggregateMethod
                         allowDate:(bool)allowDate {
+    if ([propertyName isEqualToString:@"self"]) {
+        if (canAggregate(_type, allowDate)) {
+            return;
+        }
+        @throw RLMException(@"%@ is not supported for %@%s array",
+                            NSStringFromSelector(aggregateMethod),
+                            RLMTypeToString(_type), _optional ? "?" : "");
+    }
+
     RLMObjectSchema *objectSchema;
     if (_backingArray.count) {
         objectSchema = [_backingArray[0] objectSchema];
@@ -405,42 +436,52 @@ static void validateArrayBounds(__unsafe_unretained RLMArray *const ar,
         objectSchema = [RLMSchema.partialPrivateSharedSchema schemaForClassName:_objectClassName];
     }
 
-    RLMProperty *prop = RLMValidatedProperty(objectSchema, propertyName);
-    switch (prop.type) {
-        case RLMPropertyTypeInt:
-        case RLMPropertyTypeFloat:
-        case RLMPropertyTypeDouble:
-            break;
-        case RLMPropertyTypeDate:
-            if (allowDate) {
-                break;
-            }
-            [[clang::fallthrough]];
-        default:
-            @throw RLMException(@"%@ is not supported for %@ property '%@.%@'",
-                                NSStringFromSelector(aggregateMethod),
-                                RLMTypeToString(prop.type), _objectClassName, propertyName);
+    RLMPropertyType type = RLMValidatedProperty(objectSchema, propertyName).type;
+    if (canAggregate(type, allowDate)) {
+        return;
     }
+
+    @throw RLMException(@"%@ is not supported for %@ property '%@.%@'",
+                        NSStringFromSelector(aggregateMethod),
+                        RLMTypeToString(type), _objectClassName, propertyName);
 }
+
+- (id)aggregateProperty:(NSString *)property type:(NSString *)method {
+    if (!_backingArray) {
+        return nil;
+    }
+    NSArray *values = [property isEqualToString:@"self"] ? _backingArray : [_backingArray valueForKey:property];
+    if (_optional) {
+        // Filter out NSNull values to match our behavior on managed arrays
+        NSIndexSet *nonnull = [values indexesOfObjectsPassingTest:^BOOL(id obj, NSUInteger, BOOL *) {
+            return obj != NSNull.null;
+        }];
+        if (nonnull.count < values.count) {
+            values = [values objectsAtIndexes:nonnull];
+        }
+    }
+    return [values valueForKeyPath:[method stringByAppendingString:@".self"]];
+}
+
 
 - (id)minOfProperty:(NSString *)property {
     [self validateAggregateProperty:property method:_cmd allowDate:true];
-    return [_backingArray valueForKeyPath:[@"@min." stringByAppendingString:property]];
+    return [self aggregateProperty:property type:@"@min"];
 }
 
 - (id)maxOfProperty:(NSString *)property {
     [self validateAggregateProperty:property method:_cmd allowDate:true];
-    return [_backingArray valueForKeyPath:[@"@max." stringByAppendingString:property]];
+    return [self aggregateProperty:property type:@"@max"];
 }
 
 - (id)sumOfProperty:(NSString *)property {
     [self validateAggregateProperty:property method:_cmd allowDate:false];
-    return [_backingArray valueForKeyPath:[@"@sum." stringByAppendingString:property]] ?: @0;
+    return [self aggregateProperty:property type:@"@sum"] ?: @0;
 }
 
 - (id)averageOfProperty:(NSString *)property {
     [self validateAggregateProperty:property method:_cmd allowDate:false];
-    return [_backingArray valueForKeyPath:[@"@avg." stringByAppendingString:property]];
+    return [self aggregateProperty:property type:@"@avg"];
 }
 
 - (NSUInteger)indexOfObjectWithPredicate:(NSPredicate *)predicate {
