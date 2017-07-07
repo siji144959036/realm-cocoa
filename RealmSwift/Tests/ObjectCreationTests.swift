@@ -44,7 +44,7 @@ class ObjectCreationTests: TestCase {
         for prop in object.objectSchema.properties {
             let value = object[prop.name]
             if let value = value as? RLMOptionalBase {
-                XCTAssertNil(value.underlyingValue)
+                XCTAssertNil(value.__underlyingValue)
             } else {
                 XCTAssertNil(value)
             }
@@ -68,7 +68,8 @@ class ObjectCreationTests: TestCase {
             "binaryCol": "b".data(using: String.Encoding.utf8)!,
             "dateCol": Date(timeIntervalSince1970: 2),
             "objectCol": SwiftBoolObject(value: [true]),
-            "arrayCol": [SwiftBoolObject(value: [true]), SwiftBoolObject()]
+            "arrayCol": [SwiftBoolObject(value: [true]), SwiftBoolObject()],
+            "realmIntCol": RealmInteger(value: 100)
            ]
 
         // test with valid dictionary literals
@@ -106,7 +107,8 @@ class ObjectCreationTests: TestCase {
     func testInitWithArray() {
         // array with all values specified
         let baselineValues: [Any] = [true, 1, 1.1 as Float, 11.1, "b", "b".data(using: String.Encoding.utf8)!,
-            Date(timeIntervalSince1970: 2), ["boolCol": true], [[true], [false]]]
+                                     Date(timeIntervalSince1970: 2), ["boolCol": true], RealmInteger(value: 50),
+                                     [[true], [false]]]
 
         // test with valid dictionary literals
         let props = try! Realm().schema["SwiftObject"]!.properties
@@ -220,7 +222,8 @@ class ObjectCreationTests: TestCase {
             "binaryCol": "b".data(using: String.Encoding.utf8)!,
             "dateCol": Date(timeIntervalSince1970: 2),
             "objectCol": SwiftBoolObject(value: [true]),
-            "arrayCol": [SwiftBoolObject(value: [true]), SwiftBoolObject()]
+            "arrayCol": [SwiftBoolObject(value: [true]), SwiftBoolObject()],
+            "realmIntCol": RealmInteger()
         ]
 
         // test with valid dictionary literals
@@ -268,9 +271,9 @@ class ObjectCreationTests: TestCase {
     func testCreateWithArray() {
         // array with all values specified
         let baselineValues: [Any] = [true, 1, 1.1 as Float, 11.1, "b", "b".data(using: String.Encoding.utf8)!,
-            Date(timeIntervalSince1970: 2), ["boolCol": true], [[true], [false]]]
+            Date(timeIntervalSince1970: 2), ["boolCol": true], RealmInteger(), [[true], [false]]]
 
-        // test with valid dictionary literals
+        // test with valid array literals
         let props = try! Realm().schema["SwiftObject"]!.properties
         for propNum in 0..<props.count {
             for validValue in validValuesForSwiftObjectType(props[propNum].type) {
@@ -366,7 +369,8 @@ class ObjectCreationTests: TestCase {
             "binaryCol": "b".data(using: String.Encoding.utf8)!,
             "dateCol": Date(timeIntervalSince1970: 2),
             "objectCol": SwiftBoolObject(value: [true]),
-            "arrayCol": [SwiftBoolObject(value: [true]), SwiftBoolObject()]
+            "arrayCol": [SwiftBoolObject(value: [true]), SwiftBoolObject()],
+            "realmIntCol": RealmInteger(value: 9001)
         ]
 
         realmWithTestPath().beginWrite()
@@ -392,7 +396,8 @@ class ObjectCreationTests: TestCase {
             "binaryCol": "b".data(using: String.Encoding.utf8)!,
             "dateCol": Date(timeIntervalSince1970: 2),
             "objectCol": SwiftBoolObject(value: [true]),
-            "arrayCol": [SwiftBoolObject(value: [true]), SwiftBoolObject()]
+            "arrayCol": [SwiftBoolObject(value: [true]), SwiftBoolObject()],
+            "realmIntCol": RealmInteger(value: 100)
         ]
 
         let realmA = realmWithTestPath()
@@ -443,7 +448,8 @@ class ObjectCreationTests: TestCase {
             "binaryCol": "b".data(using: String.Encoding.utf8)!,
             "dateCol": Date(timeIntervalSince1970: 2),
             "objectCol": NSNull(),
-            "arrayCol": NSNull()
+            "arrayCol": NSNull(),
+            "realmIntCol": RealmInteger()
         ]
 
         realmWithTestPath().beginWrite()
@@ -708,6 +714,7 @@ class ObjectCreationTests: TestCase {
         XCTAssertEqual(object.binaryCol, (array[5] as! Data))
         XCTAssertEqual(object.dateCol, (array[6] as! Date))
         XCTAssertEqual(object.objectCol!.boolCol, boolObjectValue)
+        XCTAssertEqual(object.realmIntCol.value, (array[8] as? RealmInteger)?.value ?? array[8] as? Int)
         XCTAssertEqual(object.arrayCol.count, boolObjectListValues.count)
         for i in 0..<boolObjectListValues.count {
             XCTAssertEqual(object.arrayCol[i].boolCol, boolObjectListValues[i])
@@ -728,6 +735,8 @@ class ObjectCreationTests: TestCase {
         for i in 0..<boolObjectListValues.count {
             XCTAssertEqual(object.arrayCol[i].boolCol, boolObjectListValues[i])
         }
+        XCTAssertEqual(object.realmIntCol.value,
+                       (dictionary["realmIntCol"] as? RealmInteger)?.value ?? dictionary["realmIntCol"] as? Int)
     }
 
     private func verifySwiftOptionalObjectWithDictionaryLiteral(_ object: SwiftOptionalDefaultValuesObject,

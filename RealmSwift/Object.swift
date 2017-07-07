@@ -447,6 +447,10 @@ public class ObjectUtil: NSObject {
                 properties[name] = NSNumber(value: PropertyType.double.rawValue)
             } else if type is RealmOptional<Bool>.Type {
                 properties[name] = NSNumber(value: PropertyType.bool.rawValue)
+            } else if type is RealmInteger.Type {
+                ()
+            } else if type is Optional<RealmInteger>.Type {
+                properties[name] = NSNumber(value: PropertyType.int.rawValue)
             } else if prop.value as? RLMOptionalBase != nil {
                 throwRealmException("'\(type)' is not a valid RealmOptional type.")
             } else if mirror.displayStyle == .optional || type is ExpressibleByNilLiteral.Type {
