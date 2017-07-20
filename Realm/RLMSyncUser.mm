@@ -22,8 +22,9 @@
 #import "RLMNetworkClient.h"
 #import "RLMRealmConfiguration+Sync.h"
 #import "RLMRealmConfiguration_Private.hpp"
+#import "RLMResults_Private.hpp"
 #import "RLMSyncManager_Private.h"
-#import "RLMSyncPermissionResults_Private.hpp"
+#import "RLMSyncPermissionResults.h"
 #import "RLMSyncPermission_Private.hpp"
 #import "RLMSyncSession_Private.hpp"
 #import "RLMSyncSessionRefreshHandle.hpp"
@@ -36,7 +37,6 @@
 
 using namespace realm;
 using ConfigMaker = std::function<Realm::Config(std::shared_ptr<SyncUser>, std::string)>;
-using PermissionGetCallback = std::function<void(std::unique_ptr<PermissionResults>, std::exception_ptr)>;
 
 namespace {
 
@@ -55,8 +55,8 @@ NSError *translateExceptionPtrToError(std::exception_ptr ptr, bool get) {
     return error;
 }
 
-PermissionGetCallback RLMWrapPermissionResultsCallback(RLMPermissionResultsBlock callback) {
-    return [callback](std::unique_ptr<PermissionResults> results, std::exception_ptr ptr) {
+std::function<void(Results, std::exception_ptr)> RLMWrapPermissionResultsCallback(RLMPermissionResultsBlock callback) {
+    return [callback](Results results, std::exception_ptr ptr) {
         if (ptr) {
             NSError *error = translateExceptionPtrToError(std::move(ptr), true);
             REALM_ASSERT(error);
