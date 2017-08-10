@@ -268,19 +268,19 @@ extension Realm.Configuration: CustomStringConvertible {
 // MARK: Migration assistance
 
 public extension Realm.Configuration {
-    @available(*, unavailable, message: "Set `Realm.Configuration.kind` instead.")
+    @available(*, unavailable, message: "Get or set `Realm.Configuration.kind` instead.")
     var fileURL: URL? {
         get { fatalError() }
         set { fatalError() }
     }
 
-    @available(*, unavailable, message: "Set `Realm.Configuration.kind` instead.")
+    @available(*, unavailable, message: "Get or set `Realm.Configuration.kind` instead.")
     var inMemoryIdentifier: String? {
         get { fatalError() }
         set { fatalError() }
     }
 
-    @available(*, unavailable, message: "Set `Realm.Configuration.kind` instead.")
+    @available(*, unavailable, message: "Get or set `Realm.Configuration.kind` instead.")
     var syncConfiguration: SyncConfiguration? {
         get { fatalError() }
         set { fatalError() }
