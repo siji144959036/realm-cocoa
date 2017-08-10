@@ -45,21 +45,16 @@ extension Realm {
 
         /// :nodoc:
         public static func == (lhs: Kind, rhs: Kind) -> Bool {
-            switch lhs {
-            case let .file(lhsURL):
-                if case let .file(rhsURL) = rhs {
-                    return lhsURL == rhsURL
-                }
-            case let .inMemory(lhsIdentifier):
-                if case let .inMemory(rhsIdentifier) = rhs {
-                    return lhsIdentifier == rhsIdentifier
-                }
-            case let .synced(lhsSyncConfig):
-                if case let .synced(rhsSyncConfig) = rhs {
-                    return lhsSyncConfig == rhsSyncConfig
-                }
+            switch (lhs, rhs) {
+            case let (.file(lhsURL), .file(rhsURL)):
+                return lhsURL == rhsURL
+            case let (.inMemory(lhsIdentifier), .inMemory(rhsIdentifier)):
+                return lhsIdentifier == rhsIdentifier
+            case let (.synced(lhsSyncConfig), .synced(rhsSyncConfig)):
+                return lhsSyncConfig == rhsSyncConfig
+            default:
+                return false
             }
-            return false
         }
     }
 
