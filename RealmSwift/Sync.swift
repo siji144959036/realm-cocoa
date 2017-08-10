@@ -181,7 +181,7 @@ public typealias Provider = RLMIdentityProvider
  A `SyncConfiguration` represents configuration parameters for Realms intended to sync with
  a Realm Object Server.
  */
-public struct SyncConfiguration : Equatable {
+public struct SyncConfiguration: Equatable {
     /// The `SyncUser` who owns the Realm that this configuration should open.
     public let user: SyncUser
 
@@ -240,7 +240,7 @@ public struct SyncConfiguration : Equatable {
     }
 
     /// :nodoc:
-    public static func ==(lhs: SyncConfiguration, rhs: SyncConfiguration) -> Bool {
+    public static func == (lhs: SyncConfiguration, rhs: SyncConfiguration) -> Bool {
         return lhs.realmURL == rhs.realmURL && lhs.user == rhs.user
     }
 }

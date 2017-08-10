@@ -24,7 +24,7 @@ extension Realm {
     /**
      An enum that describes the different kinds of Realms that can be created.
      */
-    public enum Kind : Equatable {
+    public enum Kind: Equatable {
         /**
          Describes a non-synchronized Realm backed by a file saved to disk. The URL
          is the local filesystem URL to the Realm file.
@@ -44,7 +44,7 @@ extension Realm {
         case synced(SyncConfiguration)
 
         /// :nodoc:
-        public static func ==(lhs: Kind, rhs: Kind) -> Bool {
+        public static func == (lhs: Kind, rhs: Kind) -> Bool {
             switch lhs {
             case let .file(lhsURL):
                 if case let .file(rhsURL) = rhs {
