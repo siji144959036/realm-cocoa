@@ -24,8 +24,7 @@ class RealmConfigurationTests: TestCase {
     func testDefaultConfiguration() {
         let defaultConfiguration = Realm.Configuration.defaultConfiguration
 
-        XCTAssertEqual(defaultConfiguration.fileURL, try! Realm().configuration.fileURL)
-        XCTAssertNil(defaultConfiguration.inMemoryIdentifier)
+        XCTAssertEqual(defaultConfiguration.kind, try! Realm().configuration.kind)
         XCTAssertNil(defaultConfiguration.encryptionKey)
         XCTAssertFalse(defaultConfiguration.readOnly)
         XCTAssertEqual(defaultConfiguration.schemaVersion, 0)
@@ -33,11 +32,17 @@ class RealmConfigurationTests: TestCase {
     }
 
     func testSetDefaultConfiguration() {
-        let fileURL = Realm.Configuration.defaultConfiguration.fileURL
-        let configuration = Realm.Configuration(fileURL: URL(fileURLWithPath: "/dev/null"))
+        let kind = Realm.Configuration.defaultConfiguration.kind
+        let configuration = Realm.Configuration(kind: .file(URL(fileURLWithPath: "/dev/null")))
         Realm.Configuration.defaultConfiguration = configuration
-        XCTAssertEqual(Realm.Configuration.defaultConfiguration.fileURL, URL(fileURLWithPath: "/dev/null"))
-        Realm.Configuration.defaultConfiguration.fileURL = fileURL
+        var newURL: URL?
+        if case let .file(url) = Realm.Configuration.defaultConfiguration.kind {
+            newURL = url
+        } else {
+            XCTFail("Setting the default configuration's kind should work properly.")
+        }
+        XCTAssertEqual(newURL, URL(fileURLWithPath: "/dev/null"))
+        Realm.Configuration.defaultConfiguration.kind = kind
     }
 
     func testCannotSetMutuallyExclusiveProperties() {
