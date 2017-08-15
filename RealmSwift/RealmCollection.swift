@@ -434,6 +434,23 @@ public extension RealmCollection where Element: MinMaxType {
     }
 }
 
+public protocol OptionalProtocol {
+    associatedtype Wrapped
+    func _rlmInferWrappedType() -> Wrapped
+}
+extension Optional: OptionalProtocol {
+    public func _rlmInferWrappedType() -> Wrapped { return self! }
+}
+
+public extension RealmCollection where Element: OptionalProtocol, Element.Wrapped: MinMaxType {
+    public func min() -> Element.Wrapped? {
+        return min(ofProperty: "self")
+    }
+    public func max() -> Element.Wrapped? {
+        return max(ofProperty: "self")
+    }
+}
+
 public extension RealmCollection where Element: AddableType {
     public func sum() -> Element {
         return sum(ofProperty: "self")
@@ -443,7 +460,22 @@ public extension RealmCollection where Element: AddableType {
     }
 }
 
+public extension RealmCollection where Element: OptionalProtocol, Element.Wrapped: AddableType {
+    public func sum() -> Element.Wrapped {
+        return sum(ofProperty: "self")
+    }
+    public func average() -> Element.Wrapped? {
+        return average(ofProperty: "self")
+    }
+}
+
 public extension RealmCollection where Element: Comparable {
+    public func sorted(ascending: Bool = true) -> Results<Element> {
+        return sorted(byKeyPath: "self", ascending: ascending)
+    }
+}
+
+public extension RealmCollection where Element: OptionalProtocol, Element.Wrapped: Comparable {
     public func sorted(ascending: Bool = true) -> Results<Element> {
         return sorted(byKeyPath: "self", ascending: ascending)
     }
